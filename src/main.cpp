@@ -54,12 +54,13 @@ int main() {
   int lane = 1; //initial lane
   
   double ref_vel = 0.0; // miles per hour
+  
   // max_vel = 50 miles/h
   // max_acc = 10 m/s2
   // max_jerk = 10 m/s3
-
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy,&lane,&ref_vel]
+  
+  h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
+               &map_waypoints_dx,&map_waypoints_dy,&lane]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -103,6 +104,12 @@ int main() {
            *   sequentially every .02 seconds
            */
           
+          
+          
+          //define the actual (x,y) points we will use for the planner
+          vector<double> next_x_vals;
+          vector<double> next_y_vals;
+
           int prev_size = previous_path_x.size();
           
           if (prev_size>0){
@@ -115,7 +122,7 @@ int main() {
           for (int i=0;i<sensor_fusion.size();i++){
             //check if another car is in my car's lane
             float d = sensor_fusion[i][6];
-            if (d<(2+4*lane+2) && d>(2+4*lane-2)){
+            if ((d<(2+4*lane+2)) && (d>(2+4*lane-2))){
               double vx = sensor_fusion[i][3];
               double vy = sensor_fusion[i][4];
               double check_speed = sqrt(vx*vx + vy*vy);
@@ -144,7 +151,7 @@ int main() {
                   
           // create a list of widely spaced (x,y) waypoints, evenly spaced at 30m
           vector<double> pts_x;
-		  vector<double> pts_y;
+          vector<double> pts_y;
           
           //reference x, y, and yaw states. Either we will reference the starting point as where the car is or at the previous path's end point
           double ref_x = car_x;
@@ -193,8 +200,8 @@ int main() {
             double shift_x = pts_x[i]-ref_x;
             double shift_y = pts_y[i]-ref_y;
             
-            pts_x[i] = shift_x*cos(0-ref_yaw)-shift_y*sin(0-ref_yaw);
-            pts_y[i] = shift_x*sin(0-ref_yaw)+shift_y*cos(0-ref_yaw);
+            pts_x[i] = (shift_x*cos(0-ref_yaw)-shift_y*sin(0-ref_yaw));
+            pts_y[i] = (shift_x*sin(0-ref_yaw)+shift_y*cos(0-ref_yaw));
           }
           
           //create a splne
@@ -203,12 +210,8 @@ int main() {
           // set (x,y) points to the spline
           s.set_points(pts_x,pts_y);
           
-          //define the actual (x,y) points we will use for the planner
-          vector<double> next_x_vals;
-          vector<double> next_y_vals;
-          
           //start with all of the previous path points from last time
-          for (int i = 0; i < previous_path_x.size(); ++i){
+          for (int i = 0; i < previous_path_x.size(); i++){
             next_x_vals.push_back(previous_path_x[i]);
             next_y_vals.push_back(previous_path_y[i]);
           }
@@ -216,14 +219,14 @@ int main() {
           //calculate how to break up spline pointsso that we can travel at our desired reference velocity
           double target_x = 30.0;
           double target_y = s(target_x);
-          double target_dist = sqrt(target_x*target_x + target_y*target_y);
+          double target_dist = sqrt((target_x)*(target_x) + (target_y)*(target_y));
           
-          double x_add_on = 0;
+          double x_add_on = 0.0;
           
           //fill up the rest of our path planner after filling it with previous points. Here we will always output 50 points
-          for (int i = 0; i <= 50-previous_path_x.size(); ++i){
-            double N = target_dist/(.02*ref_vel/2.24);
-            double x_point = x_add_on + target_x/N;
+          for (int i = 1; i <= 50-previous_path_x.size(); i++){
+            double N = (target_dist/(.02*ref_vel/2.24));
+            double x_point = x_add_on + (target_x)/N;
             double y_point = s(x_point);
             
             x_add_on = x_point;
@@ -232,8 +235,11 @@ int main() {
             double y_ref = y_point;
             
             //rotate back to world coordinates
-            x_point = x_ref*cos(ref_yaw)-y_ref*sin(ref_yaw);
-            y_point = x_ref*sin(ref_yaw)-y_ref*cos(ref_yaw);
+            x_point = (x_ref*cos(ref_yaw)-y_ref*sin(ref_yaw));
+            y_point = (x_ref*sin(ref_yaw)+y_ref*cos(ref_yaw));
+            
+            x_point += ref_x;
+            y_point += ref_y;
             
             next_x_vals.push_back(x_point);
             next_y_vals.push_back(y_point);
@@ -249,7 +255,8 @@ int main() {
             vector<double> xy = getXY(next_s,next_d,map_waypoints_s,map_waypoints_x,map_waypoints_y);
             next_x_vals.push_back(xy[0]);
             next_y_vals.push_back(xy[1]);
-          }*/
+          }
+          */
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
