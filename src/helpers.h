@@ -154,4 +154,85 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
   return {x,y};
 }
 
+/*
+vector<string> successor_states(string &state) {
+  // Provides the possible next states given the current state for the FSM 
+  //   discussed in the course, with the exception that lane changes happen 
+  //   instantaneously, so LCL and LCR can only transition back to KL.
+  vector<string> states;
+  states.push_back("KL");
+
+  if(state=="KL") {
+    states.push_back("PLCL");
+    states.push_back("PLCR");
+  } else if (state=="PLCL") {
+    if (lane != lanes_available - 1) {
+      states.push_back("PLCL");
+      states.push_back("LCL");
+    }
+  } else if (state=="PLCR") {
+    if (lane != 0) {
+      states.push_back("PLCR");
+      states.push_back("LCR");
+    }
+  }
+
+  // If state is "LCL" or "LCR", then just return "KL"
+  return states;
+}*/
+
+//predict location of traffic
+vector<vector<double>> get_predictions(int prev_size, const vector<vector<double>> &sensor_fusion,double LOOK_AHEAD_TIME){
+  vector<vector<double>> predictions;
+  for (int i=0;i<sensor_fusion.size();i++){
+    double vx = sensor_fusion[i][3];
+    double vy = sensor_fusion[i][4];
+    double check_speed = sqrt(vx*vx + vy*vy);
+    double check_car_s = sensor_fusion[i][5];
+    //later add prediction for dx and dy
+    check_car_s += (double)prev_size*LOOK_AHEAD_TIME*check_speed;
+    predictions.push_back(sensor_fusion[i]);
+    predictions[i][5] = check_car_s;
+  }
+  return predictions;
+}
+
+
+//cost functions
+double speed_cost(double &ref_vel){
+  return (49.5-ref_vel)/49.5;
+}
+
+double check_next_lane(int lane,double car_s, vector<vector<double>> &predictions,double COLLISION_FACTOR,double SAFETY_DISTANCE){
+  int new_lane = lane+1;
+  double cost = 0.0;
+    for (int i=0;i<predictions.size();i++){
+      float d = predictions[i][6];
+      if ((d >= 4*new_lane) && ( d <= 4*(new_lane+1) )){ //check if there are cars in the next lane
+        double check_car_s = predictions[i][5];
+        double distance = fabs(check_car_s - car_s);
+        if (distance<SAFETY_DISTANCE){ //a car is too close ahead or behind
+          cost += (SAFETY_DISTANCE-distance)/SAFETY_DISTANCE;
+        }
+      }
+    }
+  return COLLISION_FACTOR*cost;
+}
+
+double check_prev_lane(int lane,double car_s, vector<vector<double>> &predictions,double COLLISION_FACTOR,double SAFETY_DISTANCE){
+  int new_lane = lane-1;
+  double cost = 0.0;
+    for (int i=0;i<predictions.size();i++){
+      float d = predictions[i][6];
+      if ((d >= 4*new_lane) && ( d<= 4*(new_lane+1 ))){ //check if there are cars in the next lane
+        double check_car_s = predictions[i][5];
+        double distance = fabs(check_car_s - car_s);
+        if (distance<SAFETY_DISTANCE){ //a car is too close ahead or behind
+          cost += (SAFETY_DISTANCE-distance)/SAFETY_DISTANCE;
+        }
+      }
+    }
+  return COLLISION_FACTOR*cost;
+}
+
 #endif  // HELPERS_H

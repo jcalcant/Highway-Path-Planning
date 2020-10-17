@@ -143,3 +143,14 @@ still be compilable with cmake and make./
 ## How to write a README
 A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
 
+## Model Reflections
+I modified the starter code in the following manner:
+
+First, I added the code from the Q&A video in order to keep the car in the middle of its current lane, decelerate when a car in front is too close, and to do a left lane change as a starter maneuver to switch to a faster lane. Also, the spline library was used together with spaced points from a previous trajectory to create the next trajectory without exceeding the max speed, acceleration and jerk.
+
+Next, I improved the switch lane maneuver by stating three cases after sensing a slow car ahead of the ego vehicle. The first case was to check if it is viable to switch to the right lane when the ego vehicle is on the first lane. The second case is a generic case for any lane between the first and last lanes. Then we should evaluate if either switching to the left or right lanes is better than keeping the current one. The last case was for evaluating the situation where the ego vehicle is on the last lane and we want to evaluate the lane of the left for switching.
+
+In all of the previous cases it is evaluated whether there are vehicles on the proposed lane or lanes and if they are close enough to the ego vehicle so that it would be dangerous to switch lane. This was done by calculating a prediction of all cars given the sensor fusion data and estimating their future position after two timesteps (0.04 s). Also at each comparison of an alternate lane to the current one, penalty costs were added for each case. If keeping the current lane, the penalty is the current velocity compared to the target one (49.5 mph). If switching lane, the penalty was the distance between the ego car and other cars within the safety interval.
+
+Lastly, I added a weight factors for keeping the lane and for encountering possible collision with other cars when switching lanes, and tuned them so that the car switches lane if it is safe to do so.
+

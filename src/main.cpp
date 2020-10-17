@@ -52,15 +52,17 @@ int main() {
   }
   
   int lane = 1; //initial lane
-  
+  int last_lane = 2;
   double ref_vel = 0.0; // miles per hour
+  
+  string state = "KL";
   
   // max_vel = 50 miles/h
   // max_acc = 10 m/s2
   // max_jerk = 10 m/s3
   
   h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy,&lane]
+               &map_waypoints_dx,&map_waypoints_dy,&lane,&state,&last_lane]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -103,9 +105,7 @@ int main() {
            * TODO: define a path made up of (x,y) points that the car will visit
            *   sequentially every .02 seconds
            */
-          
-          
-          
+                           
           //define the actual (x,y) points we will use for the planner
           vector<double> next_x_vals;
           vector<double> next_y_vals;
@@ -117,16 +117,20 @@ int main() {
           }
           
           bool too_close = false;
-          
+          double vx;
+          double vy;
+          double check_speed;
+          double check_car_s;
+          float d;
           //find ref_v to use
           for (int i=0;i<sensor_fusion.size();i++){
             //check if another car is in my car's lane
-            float d = sensor_fusion[i][6];
+            d = sensor_fusion[i][6];
             if ((d<(2+4*lane+2)) && (d>(2+4*lane-2))){
-              double vx = sensor_fusion[i][3];
-              double vy = sensor_fusion[i][4];
-              double check_speed = sqrt(vx*vx + vy*vy);
-              double check_car_s = sensor_fusion[i][5];
+              vx = sensor_fusion[i][3];
+              vy = sensor_fusion[i][4];
+              check_speed = sqrt(vx*vx + vy*vy);
+              check_car_s = sensor_fusion[i][5];
               
               //if using previous points we can project s value outwards in time, meaning that we can predict where the obstacle car will be next 
               check_car_s += (double)prev_size*.02*check_speed;
@@ -142,12 +146,61 @@ int main() {
             }
           }
           
+          
+          double COLLISION_FACTOR = 3.0;
+          double SPEED_FACTOR = 1.0;
+          double SAFETY_DISTANCE = 25.0;
+          double LOOK_AHEAD_TIME = 0.04;
+          
+          //simple cost function planner
+          double next_lane_cost;
+          double previous_lane_cost;
+          double KL_cost = SPEED_FACTOR*speed_cost(ref_vel);
+          if (too_close){
+            vector<vector<double>> predictions = get_predictions(prev_size,sensor_fusion,LOOK_AHEAD_TIME);
+            ref_vel -= 0.224; //approx -5 meters/s^2
+            
+            //check if it's possible to change to the lane in the right
+            if (lane == 0){
+              next_lane_cost = check_next_lane(lane,car_s,predictions,COLLISION_FACTOR,SAFETY_DISTANCE);
+              if (next_lane_cost < KL_cost){
+                lane++;
+              }
+            }
+
+            // check if either adjacent lane is better than the current one
+            else if ((lane>0)&&(lane < last_lane)){
+              previous_lane_cost = check_prev_lane(lane,car_s,predictions,COLLISION_FACTOR,SAFETY_DISTANCE);
+              next_lane_cost = check_next_lane(lane,car_s,predictions,COLLISION_FACTOR,SAFETY_DISTANCE);
+
+              if ( (previous_lane_cost < next_lane_cost) && (previous_lane_cost < KL_cost) ){
+                lane--;
+              }
+              else if (next_lane_cost < KL_cost){
+                lane++;
+              }
+            }
+            else //lane == last_lane. //check if it's possible to change to the lane in the left
+            {
+              previous_lane_cost = check_prev_lane(lane,car_s,predictions,COLLISION_FACTOR,SAFETY_DISTANCE);
+              if (previous_lane_cost < KL_cost){
+                lane--;
+              }
+            }
+            
+          }
+          else if (ref_vel < 49.5){
+            ref_vel += 0.224; //approx +5 meters/s^2
+          }  
+                  
+          /*
           if (too_close){
             ref_vel -= 0.224; //approx -5 meters/s^2
           }
           else if (ref_vel < 49.5){
             ref_vel += 0.224; //approx +5 meters/s^2
-          }
+          }*/
+          
                   
           // create a list of widely spaced (x,y) waypoints, evenly spaced at 30m
           vector<double> pts_x;
@@ -216,7 +269,7 @@ int main() {
             next_y_vals.push_back(previous_path_y[i]);
           }
           
-          //calculate how to break up spline pointsso that we can travel at our desired reference velocity
+          //calculate how to break up spline points so that we can travel at our desired reference velocity
           double target_x = 30.0;
           double target_y = s(target_x);
           double target_dist = sqrt((target_x)*(target_x) + (target_y)*(target_y));
